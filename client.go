@@ -499,9 +499,9 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 	if logger != nil {
 		switch v := logger.(type) {
 		case Logger:
-			v.Printf("[DEBUG] %s %s", req.Method, req.URL)
+			v.Printf("[DEBUG] %s %s", req.Method, redactURL(req.URL))
 		case LeveledLogger:
-			v.Debug("performing request", "method", req.Method, "url", req.URL)
+			v.Debug("performing request", "method", req.Method, "url", redactURL(req.URL))
 		}
 	}
 
@@ -548,9 +548,9 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		if err != nil {
 			switch v := logger.(type) {
 			case Logger:
-				v.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, err)
+				v.Printf("[ERR] %s %s request failed: %v", req.Method, redactURL(req.URL), err)
 			case LeveledLogger:
-				v.Error("request failed", "error", err, "method", req.Method, "url", req.URL)
+				v.Error("request failed", "error", err, "method", req.Method, "url", redactURL(req.URL))
 			}
 		} else {
 			// Call this here to maintain the behavior of logging all requests,
@@ -590,7 +590,7 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		}
 
 		wait := c.Backoff(c.RetryWaitMin, c.RetryWaitMax, i, resp)
-		desc := fmt.Sprintf("%s %s", req.Method, req.URL)
+		desc := fmt.Sprintf("%s %s", req.Method, redactURL(req.URL))
 		if code > 0 {
 			desc = fmt.Sprintf("%s (status: %d)", desc, code)
 		}
@@ -622,7 +622,7 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 	}
 	c.HTTPClient.CloseIdleConnections()
 	return nil, fmt.Errorf("%s %s giving up after %d attempts",
-		req.Method, req.URL, c.RetryMax+1)
+		req.Method, redactURL(req.URL), c.RetryMax+1)
 }
 
 // Try to read the response body so we can reuse this connection.
@@ -702,4 +702,18 @@ func (c *Client) StandardClient() *http.Client {
 	return &http.Client{
 		Transport: &RoundTripper{Client: c},
 	}
+}
+
+// Taken from url.URL#Redacted() which was introduced in go 1.15.
+// We can switch to using it directly if we'll bump the minimum required go version.
+func redactURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+
+	ru := *u
+	if _, has := ru.User.Password(); has {
+		ru.User = url.UserPassword(ru.User.Username(), "xxxxx")
+	}
+	return ru.String()
 }

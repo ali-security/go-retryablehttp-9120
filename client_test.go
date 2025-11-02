@@ -255,22 +255,49 @@ func TestClient_Do_fails(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Create the client. Use short retry windows so we fail faster.
-	client := NewClient()
-	client.RetryWaitMin = 10 * time.Millisecond
-	client.RetryWaitMax = 10 * time.Millisecond
-	client.RetryMax = 2
-
-	// Create the request
-	req, err := NewRequest("POST", ts.URL, nil)
+	serverUrlWithBasicAuth, err := url.Parse(ts.URL)
 	if err != nil {
-		t.Fatalf("err: %v", err)
+		t.Fatalf("failed parsing test server url: %s", ts.URL)
+	}
+	serverUrlWithBasicAuth.User = url.UserPassword("user", "pasten")
+
+	tests := []struct {
+		url  string
+		name string
+		err  string
+	}{
+		{
+			url:  ts.URL,
+			name: "default_retry_policy",
+			err:  "giving up after 3 attempts",
+		},
+		{
+			url:  serverUrlWithBasicAuth.String(),
+			name: "default_retry_policy_url_with_basic_auth",
+			err:  redactURL(serverUrlWithBasicAuth) + " giving up after 3 attempts",
+		},
 	}
 
-	// Send the request.
-	_, err = client.Do(req)
-	if err == nil || !strings.Contains(err.Error(), "giving up") {
-		t.Fatalf("expected giving up error, got: %#v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create the client. Use short retry windows so we fail faster.
+			client := NewClient()
+			client.RetryWaitMin = 10 * time.Millisecond
+			client.RetryWaitMax = 10 * time.Millisecond
+			client.RetryMax = 2
+
+			// Create the request
+			req, err := NewRequest("POST", tt.url, nil)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+
+			// Send the request.
+			_, err = client.Do(req)
+			if err == nil || !strings.HasSuffix(err.Error(), tt.err) {
+				t.Fatalf("expected %#v, got: %#v", tt.err, err)
+			}
+		})
 	}
 }
 
